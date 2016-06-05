@@ -6,6 +6,48 @@ import re
 
 ################################################################################
 
+class Strand(object):
+  """Represents the strand of a sequence.
+
+     Strand may be top, represented by "+", bottom ("-") or none (".").
+     For purposes of object creation, -1, 0 and 1 are accepted as bottom,
+     none and top also.  For ordering purposes, top < none < bottom.
+  """
+  tagValue = {'+': -1, '.': 0, '-': 1}
+
+  def __init__(self,tag):
+    if tag in ('+',1):
+      self._tag = '+'
+    elif tag in ('.',0):
+      self._tag = '.'
+    elif tag in ('-',-1):
+      self._tag = '-'
+    else:
+      raise ValueError("strand '%s' not in ('-','.','+')" % tag)
+
+  def __eq__(self,other):
+    return isinstance(other,type(self)) and self._tag == other._tag
+  def __ne__(self,other):
+    return not isinstance(other,type(self)) or self._tag != other._tag
+  def __lt__(self,other):
+    try:
+      return self.tagValue[self._tag] < self.tagValue[other._tag]
+    except AttributeError:
+      return NotImplemented
+  def __le__(self,other):
+    try:
+      return self.tagValue[self._tag] <= self.tagValue[other._tag]
+    except AttributeError:
+      return NotImplemented
+  def __str__(self):
+    return self._tag
+  def __repr__(self):
+    return "Strand(%s)" % self._tag
+  def tag(self):
+    return self._tag
+  def isNone(self):
+    return self._tag == '.'
+
 class Interval(object):
   """Base class for representing genomic intervals.
 
@@ -20,7 +62,7 @@ class Interval(object):
      ``==`` and so on.
   """
 
-  chromPat = re.compile("^chr(\d+)(_\w+)?$")
+  chromPat = re.compile("^(chr)?(\d+)(_\w+)?$")
 
   def __init__(self,chrom,left,right,strand=".",name=None):
     """Construct an interval object.
@@ -38,22 +80,22 @@ class Interval(object):
     self._left = left
     self._right = right
     if strand == None:
-      self._strand = '.'
+      self._strand = Strand('.')
     else:
-      self._strand = strand
+      self._strand = Strand(strand)
     if name == None:
       name = "%s:%d-%d" % (chrom,left,right)
     self._name = name
 
   def __str__(self):
     s = "%s:%d-%d" % (self._chrom,self._left,self._right)
-    if self._strand != '.':
-      s += self._strand
+    if not self._strand.isNone():
+      s += "%s" % self._strand
     return s
 
   def __repr__(self):
     name = '"%s"' % (self._name,) if self._name != "" else "None"
-    return "Interval(%s,%d,%d,strand='%s',name=%s)" % (self._chrom,self._left,self._right,self._strand,name)
+    return "Interval(%s,%d,%d,strand='%s',name=%s)" % (self._chrom,self._left,self._right,self._strand.tag(),name)
 
   def __eq__(self,other):
     if other == None or not isinstance(other,type(self)):
@@ -65,49 +107,36 @@ class Interval(object):
       return True
     return self._chrom!=other._chrom or self._left!=other._left or self._right!=other._right or self._strand!=other._strand
 
-  def _chromComp(self,c1,c2):
+  def _chromLT(self,c1,c2):
     mo1 = self.chromPat.match(c1)
     mo2 = self.chromPat.match(c2)
     if mo1 and mo2:
-      i1 = int(mo1.group(1))
-      i2 = int(mo2.group(1))
+      i1 = int(mo1.group(2))
+      i2 = int(mo2.group(2))
       if i1 == i2:
-        t1 = mo1.group(2)
-        t2 = mo2.group(2)
-        return cmp(t1,t2)
+        t1 = mo1.group(3)
+        t2 = mo2.group(3)
+        return (t1 == None and t2 != None) or (t1 != None and t2 != None and t1 < t2)
       else:
-        return cmp(i1,i2)
+        return i1 < i2
     elif mo1:
-      return -1
+      return True
     elif mo2:
-      return 1
+      return False
     else:
-      return cmp(c1,c2)
+      return c1 < c2
 
-  def __cmp__(self,other):
-    cc = self._chromComp(self._chrom,other._chrom)
-    if cc == 0: # chromosome is equal
-      if self._left < other._left:
-        return -1
-      elif self._left > other._left:
-        return 1
-      elif self._right < other._right:
-        return -1
-      elif self._right > other._right:
-        return 1
-      else:
-        if self._strand == other._strand:
-          return 0
-        elif self._strand == '.':
-          return -1
-        elif other._strand == '.':
-          return 1
-        elif self._strand == '+':
-          return -1
-        else:
-          return 1
+  def __lt__(self,other):
+    if self._chrom == other._chrom:
+      return (self._left < other._left) or (self._left == other._left and self._right < other._right) or (self._left == other._left and self._right == other._right and self._strand < other._strand)
     else:
-      return cc
+      return self._chromLT(self._chrom,other._chrom)
+
+  def __le__(self,other):
+    if self._chrom == other._chrom:
+      return (self._left < other._left) or (self._left == other._left and self._right <= other._right) or (self._left == other._left and self._right == other._right and self._strand <= other._strand)
+    else:
+      return self._chromLT(self._chrom,other._chrom)
 
   def _getName(self):
     return self._name
@@ -140,7 +169,7 @@ class Interval(object):
   def _getStrand(self):
     return self._strand
   def _setStrand(self,strand):
-    self._strand = strand
+    self._strand = Strand(strand)
   strand = property(_getStrand,_setStrand)
   """The strand of the interval (get/set)."""
 
@@ -153,7 +182,7 @@ class Interval(object):
 
        :rtype: bool
    """
-    return isinstance(self._left,int) and isinstance(self._right,int) and self._left <= self._right and self._left >= 0 and self._strand in "+-."
+    return isinstance(self._left,int) and isinstance(self._right,int) and self._left <= self._right and self._left >= 0 and (self._strand == None or isinstance(self._strand,Strand))
 
 ################################################################################
 
