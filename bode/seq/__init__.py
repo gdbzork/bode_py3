@@ -134,7 +134,7 @@ class Interval(object):
 
   def __le__(self,other):
     if self._chrom == other._chrom:
-      return (self._left < other._left) or (self._left == other._left and self._right <= other._right) or (self._left == other._left and self._right == other._right and self._strand <= other._strand)
+      return (self._left < other._left) or (self._left == other._left and self._right < other._right) or (self._left == other._left and self._right == other._right and self._strand <= other._strand)
     else:
       return self._chromLT(self._chrom,other._chrom)
 

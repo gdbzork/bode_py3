@@ -1,0 +1,38 @@
+#!/usr/local/bin/python
+
+import sys
+import argparse
+
+import bode.motif_pipe
+
+################################################################################
+
+def parseOpts():
+  parser = argparse.ArgumentParser("Motif Analysis from Summits")
+  parser.add_argument("tool",action="store",
+                      help="which motif program to run")
+  parser.add_argument("summits",action="store",
+                      help="the summits file (bed format)")
+  parser.add_argument("-l","--length",action="store",dest="length",
+                      default="15,17,19",
+                      help="the length of motif to look for (program specific)")
+  args = parser.parse_args()
+  return args
+
+################################################################################
+
+conf = motif_pipe.getDefaults()
+args = parseOpts()
+tag = args.tool
+fn = args.summits
+length = args.length
+if tag == "meme":
+  motif_pipe.meme(fn,conf)
+elif tag == "siomics":
+  motif_pipe.siomics(fn,conf)
+elif tag == "memechip":
+  motif_pipe.meme_chip(fn,conf)
+elif tag == "homer":
+  motif_pipe.homer(fn,conf,length)
+else:
+  sys.stderr.write("Need a command: 'meme' | 'memechip' | 'homer'\n")

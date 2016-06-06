@@ -1,4 +1,3 @@
-import sys
 import unittest
 from tests import TestUtil
 from bode.seq import Interval
@@ -95,10 +94,9 @@ class TestInterval(TestUtil):
     self.assertEqual(y==x,True)
     y.strand = '+'
     self.assertEqual(x<y,False)
-    sys.stderr.write("x: %s\ny: %s\nx.strand: %s\ny.strand: %s\n" % (x,y,x.strand,y.strand))
     self.assertEqual(y<x,True)
-    self.assertEqual(x<=y,True)
-    self.assertEqual(y<=x,False)
+    self.assertEqual(x<=y,False)
+    self.assertEqual(y<=x,True)
     self.assertEqual(y==x,False)
     y.strand = '-'
     self.assertEqual(x<y,True)
