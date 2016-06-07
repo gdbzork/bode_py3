@@ -1,0 +1,121 @@
+#!/usr/bin/env python
+
+import sys
+import os
+import os.path
+import gzip
+import logging
+import hashlib
+import argparse
+
+karyo_files = {
+  'hsa': '/Users/brown22/refdata/genomes/human_hg18_chrom_sizes_bigwig',
+  'hg19': '/Users/brown22/refdata/genomes/human_hg19_chrom_sizes_bigwig',
+  'mm9': '/Users/brown22/refdata/genomes/mouse_mm9_chrom_sizes_bigwig',
+  'Zv9': '/Users/brown22/refdata/genomes/zebrafish_Zv9_chrom_sizes_bigwig',
+}
+
+################################################################################
+
+def processOptions():
+  p = argparse.ArgumentParser(description="Check/Repair Bedgraphs")
+  p.add_argument("files",nargs="*",help="Files to check/repair")
+  p.add_argument("-c","--check",action="store_true",default=False)
+  p.add_argument("-v","--verbose",action="store_true",default=False)
+  return p.parse_args()
+
+def loadKaryo(fn):
+  fd = open(fn)
+  karyoMap = {}
+  for line in fd:
+    (chrom,length) = line.split()
+    length = int(length)
+    karyoMap[chrom] = length
+  fd.close()
+  logging.debug("loaded %d chromosomes from '%s'",len(karyoMap),fn)
+  return karyoMap
+
+def scanBGR(kmap,fn,verbose):
+  changed = False
+  fd = gzip.GzipFile(fn,"rb")
+  fd.readline()
+  for line in fd:
+    flds = line.split()
+    (chrom,left,right,height) = (flds[0],int(flds[1]),int(flds[2]),int(flds[3]))
+    try:
+      chromLen = kmap[chrom]
+      if left >= chromLen or right > chromLen:
+        if verbose:
+          logging.info("  %s:%d-%d exceeds %d",chrom,left,right,chromLen)
+        changed = True
+    except KeyError:
+      logging.warning("Key Error in '%s': key '%s' not in chrom map",fn,chrom)
+  fd.close()
+  return changed
+    
+def fixBGR(kmap,fn):
+  md5 = hashlib.md5()
+  changed = False
+  tmpFn = fn + "_tmp"
+  tmpFd = gzip.GzipFile(tmpFn,"wb")
+  fd = gzip.GzipFile(fn,"rb")
+  header = fd.readline()
+  tmpFd.write(header)
+  md5.update(header)
+  for line in fd:
+    flds = line.split()
+    (chrom,left,right,height) = (flds[0],int(flds[1]),int(flds[2]),int(flds[3]))
+    chromLen = kmap[chrom]
+    if left >= chromLen:
+      logging.info("Dropping interval %s:%d-%d",chrom,left,right)
+      changed = True
+    elif right > chromLen:
+      logging.info("Truncating %s:%d-%d to %s:%d-%d",chrom,left,right,chrom,left,chromLen)
+      changed = True
+      line = "%s\t%d\t%d\t%d\n" % (chrom,left,chromLen,height)
+      tmpFd.write("%s" % (line,))
+      md5.update(line)
+    else:
+      tmpFd.write("%s" % (line,))
+      md5.update(line)
+  fd.close()
+  tmpFd.close()
+  return (tmpFn,md5.hexdigest())
+
+def updateChksum(fn,chksum):
+  logging.info("%s  %s",chksum,fn)
+    
+################################################################################
+
+logging.getLogger().setLevel(logging.INFO)
+args = processOptions()
+if args.check:
+  logging.debug("Just reporting, not fixing.")
+for fn in args.files:
+  genome = (os.path.splitext(os.path.splitext(fn)[0])[0]).split("_")[-1]
+  if genome not in karyo_files:
+    logging.debug("Genome mismatch '%s', assuming '%s'",genome,"hsa")
+    genome = "hsa"
+  logging.debug("Testing '%s' (genome=%s)",fn,genome)
+  kmap = loadKaryo(karyo_files[genome])
+  changed = scanBGR(kmap,fn,args.verbose)
+  if args.check:
+    if changed:
+       logging.info(" REPAIR  %s",fn)
+    else:
+       logging.info(" okay -- %s",fn)
+  else:
+    if changed:
+      logging.debug("Repairing: %s",fn)
+      (tmpFn,md5) = fixBGR(kmap,fn)
+      # mv tmpFn to fn
+      logging.debug("Deleting '%s'",fn)
+      os.unlink(fn)
+      logging.debug("Renaming '%s' -> '%s'",tmpFn,fn)
+      os.rename(tmpFn,fn)
+      # update checksum in db
+  #    updateChksum(fn,md5)
+      logging.info("Repaired: %s",fn)
+      logging.info("%s  %s",md5,fn)
+    else:
+      logging.info("Unchanged: %s",fn)

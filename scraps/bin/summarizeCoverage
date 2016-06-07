@@ -1,0 +1,67 @@
+#!/usr/bin/env python
+
+import sys
+import subprocess
+import logging
+
+################################################################################
+
+def loadKaryo(fn):
+  chroms = {}
+  fd = open(fn)
+  for line in fd:
+    flds = line.split()
+    chroms[flds[0]] = int(flds[1])
+  fd.close()
+  logging.debug("Loaded %d chroms: %s",len(chroms),",".join(chroms.keys()))
+  return chroms
+
+def summarize(fn,karyo):
+  cmd = ["samtools","mpileup","-B","-f","/storage/data03/genomes/Homo_sapiens_GRC_h37/hsa.fa",fn]
+  proc = subprocess.Popen(cmd,stdout=subprocess.PIPE)
+  fd = proc.stdout
+  pchrom = None
+  ppos = 0
+  depth = {}
+  for line in fd: 
+    flds = line.split()
+    (chrom,pos,cov) = (flds[0],int(flds[1]),int(flds[3]))
+    if chrom != pchrom:
+      if pchrom != None:
+        clen = karyo[pchrom]
+        if clen != ppos:
+          depth[0] = depth.get(0,0) + (clen - ppos)
+          logging.debug("Addng %d to 0 for chrom tail %s (clen=%d, ppos=%d)",clen-ppos,pchrom,clen,ppos)
+      depth[0] = depth.get(0,0) + pos - 1 # due to 1-based coordinates
+      logging.debug("Addng %d to 0 for chrom head %s",pos-1,chrom)
+      pchrom = chrom
+    elif pos != ppos + 1:
+      depth[0] = depth.get(0,0) + (pos - ppos)
+    ppos = pos
+    depth[cov] = depth.get(cov,0) + 1
+  clen = karyo[chrom]
+  if pos != clen:
+    depth[0] = depth.get(0,0) + (clen - pos)
+    logging.debug("Addng %d to 0 for chrom tail %s (clen=%d, pos=%d)",clen-pos,pchrom,clen,pos)
+  return depth
+
+def dumpSummary(summary,fd,karyo):
+  logging.debug("Dumping summary... %d non-zero loci.",len(summary))
+  tot = sum(karyo.values())
+  logging.debug("Total positions: %d",tot)
+  tot = float(tot)
+  top = max(summary.keys())
+  total = 0
+  for i in range(0,top+1):
+    di = summary.get(i,0)
+    fd.write("%d\t%d\t%f\n" % (i,di,float(di)/tot))
+    total += di
+  logging.debug("Total region covered: %d",total)
+
+################################################################################
+
+logging.getLogger().setLevel(logging.DEBUG)
+(karyoFN,bamFN) = sys.argv[1:]
+karyo = loadKaryo(karyoFN)
+result = summarize(bamFN,karyo)
+dumpSummary(result,sys.stdout,karyo)

@@ -1,0 +1,54 @@
+#!/usr/local/bin/python
+
+import sys
+import argparse
+
+################################################################################
+
+def processOpts(args):
+  parser = argparse.ArgumentParser(description="homerPeak2bed options")
+  parser.add_argument("--width","-w",dest="width",action="store",type=int,
+                      help="width of destination peak (0 for summits)")
+  parser.add_argument("infile",action="store",type=str,
+                      help="input filename ('-' for stdin)")
+  parser.add_argument("outfile",action="store",type=str,
+                      help="output filename ('-' for stdout)")
+  args = parser.parse_args(args)
+  return args
+
+################################################################################
+
+args = processOpts(sys.argv[1:])
+
+if args.infile == '-':
+  inFD = sys.stdin
+else:
+  inFD = open(args.infile)
+if args.outfile == '-':
+  outFD = sys.stdout
+else:
+  outFD = open(args.outfile,"w")
+if args.width == None:
+  flank = None
+else:
+  flank = args.width / 2
+
+for line in inFD:
+  if line[0] == '#':
+    continue
+  flds = line.split()
+  if flds[1] == "chrM":
+    continue
+  if flank == None:
+    r = int(flds[3])+1 # to get 0-based, half-open interval
+    outFD.write("%s\t%s\t%d\t%s\t%s\t%s\n" % (flds[1],flds[2],r,flds[0],flds[7],flds[4]))
+  else:
+    (l,r) = (int(flds[2]),int(flds[3]))
+    mid = int((l+r)/2)
+    if flank == 0: # asking for summits
+      (l,r) = (mid,mid+1)
+    elif flank % 2 == 1: # odd number
+      (l,r) = (mid-flank,mid+flank+1)
+    else: # even number
+      (l,r) = (mid-flank+1,mid+flank+1)
+    outFD.write("%s\t%d\t%d\t%s\t%s\t%s\n" % (flds[1],l,r,flds[0],flds[7],flds[4]))

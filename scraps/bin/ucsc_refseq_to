@@ -1,0 +1,46 @@
+#!/usr/local/bin/python
+
+import sys
+
+################################################################################
+################################################################################
+
+inFD = open(sys.argv[1])
+outFD = open(sys.argv[2],"w")
+
+count = 0
+revCount = 0
+skipped = 0
+exons = 0
+seen = set()
+for line in inFD:
+  count += 1
+  if line[0] == '#':
+    continue
+  flds = line.split()
+  if len(flds) < 16:
+    print >>sys.stderr,"skipping line %d (%d fields):\n%s" % (count,len(flds),line),
+    skipped += 1
+    continue
+  exCount = int(flds[8])
+  exStart = filter(lambda x:len(x)>0,flds[9].split(","))
+  exEnd = filter(lambda x:len(x)>0,flds[10].split(","))
+  if len(exStart) != exCount or len(exEnd) != exCount:
+    print >>sys.stderr,"line %d: exon count wrong (%d,%d,%d):\n%s" % (count,exCount,len(exStart),len(exEnd),line),
+    skipped += 1
+    continue
+  for i in range(0,exCount):
+    st = int(exStart[i])
+    en = int(exEnd[i])
+    if en < st:
+      (st,en) = (en,st)
+      revCount += 1
+    tp = (flds[2],st,en)
+    if tp in seen:
+      continue
+    seen.add(tp)
+    outFD.write("%s\t%d\t%d\t%s:%s\t0\t%s\n" % (flds[2],st,en,flds[1],flds[12],flds[3]))
+    exons += 1
+inFD.close()
+outFD.close()
+print >>sys.stderr,"%d genes  %d exons  %d reversed  %d skipped" % (count,exons,revCount,skipped)
